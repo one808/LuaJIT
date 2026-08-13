@@ -3,11 +3,11 @@ name: Sync upstream LuaJIT & Build
 
 on:
   schedule:
-    - cron: '0 8 * * *'       # 每天 UTC 08:00（北京时间 16:00）
-  workflow_dispatch:            # 支持手动触发
+    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 permissions:
-  contents: write               # 需要 push 权限
+  contents: write
 
 env:
   UPSTREAM_REPO: LuaJIT/LuaJIT
@@ -63,10 +63,12 @@ jobs:
         include:
           - os: ubuntu-latest
             build_name: Linux x86_64
-          - os: macos-latest
-            build_name: macOS arm64
           - os: windows-latest
             build_name: Windows x64
+            arch: x64
+          - os: windows-latest
+            build_name: Windows x86
+            arch: x86
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -74,23 +76,31 @@ jobs:
         with:
           ref: ${{ env.LOCAL_BRANCH }}
 
-      - name: Build (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
         run: |
           echo "Building: ${{ matrix.build_name }}"
-          make -j$(sysctl -n hw.logicalcpu 2>/dev/null || nproc) PREFIX=${{ github.workspace }}/install
+          make -j$(nproc) PREFIX=${{ github.workspace }}/install
 
-      - name: Install (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Install (Linux)
+        if: runner.os == 'Linux'
         run: make install PREFIX=${{ github.workspace }}/install
 
-      - name: Smoke test (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
         run: |
           ${{ github.workspace }}/install/bin/luajit -e "
             print('LuaJIT version: ' .. jit.version)
             print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')
           "
+
+      - name: Upload artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: luajit-${{ matrix.os }}
+          path: ${{ github.workspace }}/install/
+          retention-days: 7
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -105,21 +115,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          src\luajit.exe -e "print('LuaJIT version: ' .. jit.version); print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')"
-
-      - name: Upload artifacts (Linux/macOS)
-        if: runner.os != 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: luajit-${{ matrix.os }}
-          path: ${{ github.workspace }}/install/
-          retention-days: 7
+          src/luajit.exe -e "print('LuaJIT version: ' .. jit.version); print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')"
 
       - name: Upload artifacts (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: luajit-windows-latest
+          name: luajit-windows-${{ matrix.arch }}
           path: |
             src/luajit.exe
             src/lua51.dll
