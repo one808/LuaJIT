@@ -1,0 +1,95 @@
+# .github/workflows/sync-and-build.yml
+name: Sync upstream LuaJIT & Build
+
+on:
+  schedule:
+    - cron: '0 8 * * *'       # 每天 UTC 08:00（北京时间 16:00）
+  workflow_dispatch:            # 支持手动触发
+
+permissions:
+  contents: write               # 需要 push 权限
+
+env:
+  UPSTREAM_REPO: LuaJIT/LuaJIT
+  UPSTREAM_BRANCH: master
+  LOCAL_BRANCH: master
+
+jobs:
+  sync:
+    name: Sync from upstream
+    runs-on: ubuntu-latest
+    outputs:
+      new_commits: ${{ steps.check.outputs.has_new }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LOCAL_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git || true
+
+      - name: Fetch upstream
+        run: git fetch upstream ${{ env.UPSTREAM_BRANCH }}
+
+      - name: Check for new commits
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          REMOTE=$(git rev-parse upstream/${{ env.UPSTREAM_BRANCH }})
+          if [ "$LOCAL" = "$REMOTE" ]; then
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Already up to date ($LOCAL)"
+          else
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+            COMMITS=$(git rev-list HEAD..upstream/${{ env.UPSTREAM_BRANCH }} --count)
+            echo "🆕 Found $COMMITS new commit(s)"
+          fi
+
+      - name: Merge upstream
+        if: steps.check.outputs.has_new == 'true'
+        run: |
+          git merge upstream/${{ env.UPSTREAM_BRANCH }} --no-edit
+          git push
+
+  build:
+    name: Build LuaJIT (${{ matrix.os }})
+    needs: sync
+    if: needs.sync.outputs.new_commits == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build_name: Linux x86_64
+          - os: macos-latest
+            build_name: macOS arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LOCAL_BRANCH }}
+
+      - name: Build
+        run: |
+          echo "Building: ${{ matrix.build_name }}"
+          make -j$(sysctl -n hw.logicalcpu 2>/dev/null || nproc) PREFIX=${{ github.workspace }}/install
+
+      - name: Install
+        run: make install PREFIX=${{ github.workspace }}/install
+
+      - name: Smoke test
+        run: |
+          ${{ github.workspace }}/install/bin/luajit -e "
+            print('LuaJIT version: ' .. jit.version)
+            print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')
+          "
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: luajit-${{ matrix.os }}
+          path: ${{ github.workspace }}/install/
+          retention-days: 7
