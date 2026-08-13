@@ -54,7 +54,7 @@ jobs:
           git push
 
   build:
-    name: Build LuaJIT (${{ matrix.os }})
+    name: Build LuaJIT (${{ matrix.build_name }})
     needs: sync
     if: needs.sync.outputs.new_commits == 'true'
     strategy:
@@ -65,6 +65,8 @@ jobs:
             build_name: Linux x86_64
           - os: macos-latest
             build_name: macOS arm64
+          - os: windows-latest
+            build_name: Windows x64
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -72,24 +74,54 @@ jobs:
         with:
           ref: ${{ env.LOCAL_BRANCH }}
 
-      - name: Build
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           echo "Building: ${{ matrix.build_name }}"
           make -j$(sysctl -n hw.logicalcpu 2>/dev/null || nproc) PREFIX=${{ github.workspace }}/install
 
-      - name: Install
+      - name: Install (Linux/macOS)
+        if: runner.os != 'Windows'
         run: make install PREFIX=${{ github.workspace }}/install
 
-      - name: Smoke test
+      - name: Smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           ${{ github.workspace }}/install/bin/luajit -e "
             print('LuaJIT version: ' .. jit.version)
             print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')
           "
 
-      - name: Upload artifacts
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          echo "Building: ${{ matrix.build_name }}
+          cd src
+          call msvcbuild.bat
+          if errorlevel 1 exit /b 1
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          src\luajit.exe -e "print('LuaJIT version: ' .. jit.version); print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')"
+
+      - name: Upload artifacts (Linux/macOS)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: luajit-${{ matrix.os }}
           path: ${{ github.workspace }}/install/
+          retention-days: 7
+
+      - name: Upload artifacts (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: luajit-windows-latest
+          path: |
+            src/luajit.exe
+            src/lua51.dll
+            src/lua51.lib
           retention-days: 7
