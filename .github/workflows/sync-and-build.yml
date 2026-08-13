@@ -102,17 +102,11 @@ jobs:
           path: ${{ github.workspace }}/install/
           retention-days: 7
 
-      - name: Setup MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.arch }}
-
       - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          echo "Building: ${{ matrix.build_name }}
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }}
           cd src
           call msvcbuild.bat
           if errorlevel 1 exit /b 1
@@ -121,7 +115,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
-          src/luajit.exe -e "print('LuaJIT version: ' .. jit.version); print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')"
+          call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }}
+          src\luajit.exe -e "print('LuaJIT version: ' .. jit.version); print('OK: LuaJIT built successfully on ${{ matrix.build_name }}')"
 
       - name: Upload artifacts (Windows)
         if: runner.os == 'Windows'
