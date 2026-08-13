@@ -11,8 +11,8 @@ permissions:
 
 env:
   UPSTREAM_REPO: LuaJIT/LuaJIT
-  UPSTREAM_BRANCH: master
-  LOCAL_BRANCH: master
+  UPSTREAM_BRANCH: v2.1
+  LOCAL_BRANCH: v2.1
 
 jobs:
   sync:
